@@ -1,4 +1,4 @@
-# 📊 SmartFolio AI — Personal Finance & Asset Intelligence
+# 📊 SmartLuvics-AI  — Personal Finance & Asset Intelligence
 
 > Dashboard analítico e sistema de recomendação financeira alimentado por IA para gestão de fluxo de caixa, alocação de ativos e rebalanceamento de carteira.
 
@@ -6,7 +6,7 @@
 
 ## 📌 Sobre o Projeto
 
-O **SmartFolio AI** é uma plataforma integrada de gestão financeira pessoal e análise de investimentos desenvolvida para substituir planilhas complexas por um banco de dados estruturado, uma interface interativa (estilo Power BI/Streamlit) e um **motor de recomendação com Inteligência Artificial**.
+O **SmartLuvics-AI ** é uma plataforma integrada de gestão financeira pessoal e análise de investimentos desenvolvida para substituir planilhas complexas por um banco de dados estruturado, uma interface interativa (estilo Power BI/Streamlit) e um **motor de recomendação com Inteligência Artificial**.
 
 O sistema combina controle de caixa pessoal com dados de mercado capturados em tempo real (via web scraping) para sugerir aportes inteligentes, manter a carteira de investimentos equilibrada e simular projeções de independência financeira.
 
