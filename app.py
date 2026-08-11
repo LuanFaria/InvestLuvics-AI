@@ -140,6 +140,7 @@ def atualizar_cotacoes():
 
     # 1. Atualizar FIIs
     fundos_df = pd.read_sql("SELECT ticker FROM fundos", conn)
+    print(fundos_df)
     for _, row in fundos_df.iterrows():
         fii = str(row['ticker']).strip().upper()
         url = f'https://statusinvest.com.br/fundos-imobiliarios/{fii.lower()}'
@@ -431,14 +432,18 @@ elif menu == "Cadastro e Operações":
                 if st.form_submit_button("Salvar Operação", use_container_width=True):
                     multiplicador = 1 if tipo_op == "Compra" else -1
                     valor_calc = val_total * multiplicador
-                    qtd_calc = qtd * multiplicador
                     
                     try:
-                        conn.execute("INSERT INTO operacoes (data_op, tipo, ativo_nome, categoria_ativo, quantidade, valor_unitario, valor_total) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                                     (data_op.strftime('%Y-%m-%d'), tipo_op, ativo_selecionado, tipo_ativo_op, qtd, preco, val_total))
+                        # CORREÇÃO AQUI: Certifique-se de que a ordem dos valores bate com as colunas
+                        # A coluna na tabela é 'ticker', não 'ativo_nome'
+                        conn.execute("""
+                            INSERT INTO operacoes (ticker, data_op, tipo, quantidade, valor_unitario, valor_total) 
+                            VALUES (?, ?, ?, ?, ?, ?)
+                        """, (ativo_selecionado, data_op.strftime('%Y-%m-%d'), tipo_op, qtd, preco, val_total))
                         
+                        # Atualização do saldo do ativo
                         if tipo_ativo_op == "FIIs":
-                            conn.execute("UPDATE fundos SET total_investido = total_investido + ?, quantidade_cotas = quantidade_cotas + ? WHERE ticker = ?", (valor_calc, qtd_calc, ativo_selecionado))
+                            conn.execute("UPDATE fundos SET total_investido = total_investido + ? WHERE ticker = ?", (valor_calc, ativo_selecionado))
                         elif tipo_ativo_op == "Ações":
                             conn.execute("UPDATE acoes SET total_investido = total_investido + ? WHERE ticker = ?", (valor_calc, ativo_selecionado))
                         else:
