@@ -29,28 +29,42 @@ def init_db():
         total_saida REAL, quantidade_cotas INTEGER
     )''')
     
-    # 2. Tabela Fundos
+# 1. Tabela Fundos Imobiliários
     c.execute('''CREATE TABLE IF NOT EXISTS fundos (
-        nome TEXT PRIMARY KEY, p_vp REAL, dy REAL, valor_atual REAL, 
-        valor_patrimonio REAL, total_investido REAL, 
-        porcentagem_patrimonio REAL, tp_fundo TEXT, quantidade_cotas INTEGER
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ticker TEXT UNIQUE,
+        segmento TEXT,
+        cota_atual REAL,
+        pvp REAL,
+        dy REAL,
+        total_investido REAL
     )''')
     
-    # 3. Tabela Ações
+    # 2. Tabela Ações
     c.execute('''CREATE TABLE IF NOT EXISTS acoes (
-        nome TEXT PRIMARY KEY, total_investido REAL, dy REAL
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ticker TEXT UNIQUE,
+        total_investido REAL,
+        dy REAL
     )''')
     
-    # 4. Tabela Renda Fixa
+    # 3. Tabela Renda Fixa
     c.execute('''CREATE TABLE IF NOT EXISTS renda_fixa (
-        nome TEXT PRIMARY KEY, total_investido REAL, porcentagem_rendimento REAL
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ticker TEXT UNIQUE,
+        total_investido REAL,
+        dy REAL
     )''')
     
-    # 5. Tabela Operacoes (Histórico)
+    # 4. Tabela Operações (Histórico)
     c.execute('''CREATE TABLE IF NOT EXISTS operacoes (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, data_op TEXT, tipo TEXT, 
-        ativo_nome TEXT, categoria_ativo TEXT, quantidade INTEGER, 
-        valor_unitario REAL, valor_total REAL
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ticker TEXT,
+        data_op DATE,
+        tipo TEXT,
+        quantidade INTEGER,
+        valor_unitario REAL,
+        valor_total REAL
     )''')
     conn.commit()
     conn.close()
@@ -114,12 +128,12 @@ def buscar_indicadores(fii):
 
 def atualizar_cotacoes():
     conn = get_connection()
-    fundos_df = pd.read_sql("SELECT nome FROM fundos", conn)
+    fundos_df = pd.read_sql("SELECT ticker FROM fundos", conn)
     for _, row in fundos_df.iterrows():
-        fii = row['nome']
+        fii = row['ticker']
         val, pvp, dy = buscar_indicadores(fii)
         if val or pvp or dy:
-            conn.execute("UPDATE fundos SET valor_atual = ?, p_vp = ?, dy = ? WHERE nome = ?", (val, pvp, dy, fii))
+            conn.execute("UPDATE fundos SET valor_atual = ?, p_vp = ?, dy = ? WHERE ticker = ?", (val, pvp, dy, fii))
     conn.commit()
     conn.close()
     st.success("Cotações de FIIs atualizadas com sucesso diretamente do StatusInvest!")
@@ -131,28 +145,28 @@ with st.sidebar:
     st.markdown("---")
     
     menu = option_menu(
-            menu_title=None, 
-            options=["Dashboard", "Controle Mensal", "Tabelas & Carteira", "Cadastro e Operações", "Calculadora de Juros", "IA Recomendações"],
-            icons=["bar-chart-fill", "wallet", "table", "arrow-left-right", "calculator", "robot"],
-            menu_icon="cast", 
-            default_index=0,
-            styles={
-                "container": {"padding": "0!important", "background-color": "transparent"},
-                "icon": {"color": "#4DA8DA", "font-size": "18px"}, 
-                "nav-link": {
-                    "font-size": "15px", 
-                    "text-align": "left", 
-                    "margin": "5px 0px", 
-                    "border-radius": "8px",
-                    "--hover-color": "transparent" # Remove o fundo preto/cinza do hover
-                },
-                "nav-link-selected": {
-                    "background-color": "#1f77b4", 
-                    "color": "white", 
-                    "font-weight": "bold"
-                },
-            }
-        )
+        menu_title=None, 
+        options=["Dashboard", "Controle Mensal", "Tabelas & Carteira", "Cadastro e Operações", "Calculadora de Juros", "IA Recomendações"],
+        icons=["bar-chart-fill", "wallet", "table", "arrow-left-right", "calculator", "robot"],
+        menu_icon="cast", 
+        default_index=0,
+        styles={
+            "container": {"padding": "0!important", "background-color": "transparent"},
+            "icon": {"color": "#4DA8DA", "font-size": "18px"}, 
+            "nav-link": {
+                "font-size": "15px", 
+                "text-align": "left", 
+                "margin": "5px 0px", 
+                "border-radius": "8px",
+                "--hover-color": "transparent" # Remove o fundo preto/cinza do hover
+            },
+            "nav-link-selected": {
+                "background-color": "#1f77b4", 
+                "color": "white", 
+                "font-weight": "bold"
+            },
+        }
+    )
 
 # ---- DASHBOARD ----
 if menu == "Dashboard":
@@ -202,14 +216,14 @@ if menu == "Dashboard":
         })
         fig = px.pie(df_plot, names='Categoria', values='Valor', hole=0.4, color_discrete_sequence=px.colors.qualitative.Pastel)
     elif tipo_grafico == "Por Fundos" and not fundos_df.empty:
-        fig = px.pie(fundos_df, names='nome', values='total_investido', hole=0.4)
+        fig = px.pie(fundos_df, names='ticker', values='total_investido', hole=0.4)
     elif tipo_grafico == "Por Tipo de Fundo" and not fundos_df.empty:
-        df_grp = fundos_df.groupby('tp_fundo', as_index=False)['total_investido'].sum()
-        fig = px.pie(df_grp, names='tp_fundo', values='total_investido', hole=0.4)
+        df_grp = fundos_df.groupby('segmento', as_index=False)['total_investido'].sum()
+        fig = px.pie(df_grp, names='segmento', values='total_investido', hole=0.4)
     elif tipo_grafico == "Ações" and not acoes_df.empty:
-        fig = px.pie(acoes_df, names='nome', values='total_investido', hole=0.4)
+        fig = px.pie(acoes_df, names='ticker', values='total_investido', hole=0.4)
     elif tipo_grafico == "Renda Fixa" and not fixa_df.empty:
-        fig = px.pie(fixa_df, names='nome', values='total_investido', hole=0.4)
+        fig = px.pie(fixa_df, names='ticker', values='total_investido', hole=0.4)
         
     if fig:
         fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
@@ -308,11 +322,23 @@ elif menu == "Cadastro e Operações":
                 if nome:
                     try:
                         if tipo_ativo_novo == "FIIs":
-                            conn.execute("INSERT INTO fundos (nome, tp_fundo, total_investido, quantidade_cotas) VALUES (?, ?, 0, 0)", (nome, tipo_fundo))
+                            # Removido 'quantidade_cotas' e alterado 'nome' para 'ticker'
+                            conn.execute(
+                                "INSERT INTO fundos (ticker, segmento, total_investido, cota_atual, pvp, dy) VALUES (?, ?, 0, 0, 0, 0)", 
+                                (nome.upper().strip(), tipo_fundo)
+                            )
                         elif tipo_ativo_novo == "Ações":
-                            conn.execute("INSERT INTO acoes (nome, total_investido) VALUES (?, 0)", (nome,))
+                            # Alterado 'nome' para 'ticker' e inicializado 'dy' como 0
+                            conn.execute(
+                                "INSERT INTO acoes (ticker, total_investido, dy) VALUES (?, 0, 0)", 
+                                (nome.upper().strip(),)
+                            )
                         else:
-                            conn.execute("INSERT INTO renda_fixa (nome, total_investido) VALUES (?, 0)", (nome,))
+                            # Alterado 'nome' para 'ticker' e inicializado 'dy' como 0
+                            conn.execute(
+                                "INSERT INTO renda_fixa (ticker, total_investido, dy) VALUES (?, 0, 0)", 
+                                (nome.strip(),)
+                            )
                         conn.commit()
                         st.success(f"Ativo {nome} cadastrado com sucesso nas tabelas de controle!")
                     except sqlite3.IntegrityError:
