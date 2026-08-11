@@ -128,13 +128,6 @@ def buscar_indicadores(fii):
     
 def atualizar_cotacoes():
     conn = get_connection()
-    fundos_df = pd.read_sql("SELECT ticker FROM fundos", conn)
-    
-    if fundos_df.empty:
-        conn.close()
-        st.warning("Nenhum fundo cadastrado no banco de dados para atualizar.")
-        return
-
     session = requests.Session()
     session.headers.update({
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
@@ -143,59 +136,60 @@ def atualizar_cotacoes():
         'Referer': 'https://statusinvest.com.br/'
     })
 
-    atualizados = 0
+    atualizados_total = 0
+
+    # 1. Atualizar FIIs
+    fundos_df = pd.read_sql("SELECT ticker FROM fundos", conn)
     for _, row in fundos_df.iterrows():
-        fii = row['ticker']
-        url = f'https://statusinvest.com.br/fundos-imobiliarios/{fii.lower().strip()}'
-        
+        fii = str(row['ticker']).strip().upper()
+        url = f'https://statusinvest.com.br/fundos-imobiliarios/{fii.lower()}'
         try:
             response = session.get(url, timeout=12)
-            if response.status_code != 200:
-                continue
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, 'html.parser')
+                val_txt = extrair_indicador(soup, ['valor atual', 'valor atual do ativo'])
+                pvp_txt = extrair_indicador(soup, ['p/vp', 'pvp'])
+                dy_txt = extrair_indicador(soup, ['dividend yield', 'dy'])
 
-            soup = BeautifulSoup(response.text, 'html.parser')
+                val_clean = float(val_txt.replace('R$', '').replace('\xa0', '').replace('.', '').replace(',', '.').strip()) if val_txt else 0.0
+                pvp_clean = float(pvp_txt.replace(',', '.').strip()) if pvp_txt else 0.0
+                dy_clean = float(dy_txt.replace(',', '.').replace('%', '').strip()) if dy_txt else 0.0
 
-            valor_atual_text = extrair_indicador(soup, ['valor atual', 'valor atual do ativo'])
-            pvp_text = extrair_indicador(soup, ['p/vp', 'pvp'])
-            dy_text = extrair_indicador(soup, ['dividend yield', 'dy'])
+                if val_clean > 0:
+                    conn.execute("UPDATE fundos SET cota_atual = ?, pvp = ?, dy = ? WHERE ticker = ?", (val_clean, pvp_clean, dy_clean, fii))
+                    atualizados_total += 1
+        except:
+            pass
 
-            # Função auxiliar interna segura para conversão numérica
-            def limpar_valor(texto, eh_porcentagem=False):
-                if not texto:
-                    return 0.0
-                try:
-                    t = str(texto).replace('R$', '').replace('%', '').replace('\xa0', '').strip()
-                    # Se tiver ponto e vírgula (ex: 1.234,56)
-                    if '.' in t and ',' in t:
-                        t = t.replace('.', '').replace(',', '.')
-                    elif ',' in t:
-                        t = t.replace(',', '.')
-                    return float(t)
-                except:
-                    return 0.0
+    # 2. Atualizar Ações
+    acoes_df = pd.read_sql("SELECT ticker FROM acoes", conn)
+    for _, row in acoes_df.iterrows():
+        acao = str(row['ticker']).strip().upper()
+        url = f'https://statusinvest.com.br/acoes/{acao.lower()}'
+        try:
+            response = session.get(url, timeout=12)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, 'html.parser')
+                val_txt = extrair_indicador(soup, ['valor atual', 'valor atual do ativo'])
+                dy_txt = extrair_indicador(soup, ['dividend yield', 'dy'])
 
-            val_clean = limpar_valor(valor_atual_text)
-            pvp_clean = limpar_valor(pvp_text)
-            dy_clean = limpar_valor(dy_text)
+                val_clean = float(val_txt.replace('R$', '').replace('\xa0', '').replace('.', '').replace(',', '.').strip()) if val_txt else 0.0
+                dy_clean = float(dy_txt.replace(',', '.').replace('%', '').strip()) if dy_txt else 0.0
 
-            # Executa o update no banco mesmo se alguns indicadores vierem zerados, desde que ache o preço
-            if val_clean > 0:
-                conn.execute(
-                    "UPDATE fundos SET cota_atual = ?, pvp = ?, dy = ? WHERE ticker = ?", 
-                    (val_clean, pvp_clean, dy_clean, fii)
-                )
-                atualizados += 1
-        except Exception:
-            continue
+                if val_clean > 0:
+                    conn.execute("UPDATE acoes SET dy = ? WHERE ticker = ?", (dy_clean, acao))
+                    # Nota: Se na sua tabela 'acoes' você tiver uma coluna de preço/cotação atual, pode incluir aqui também (ex: preco_atual = ?)
+                    atualizados_total += 1
+        except:
+            pass
 
     conn.commit()
     conn.close()
     
-    if atualizados > 0:
-        st.success(f"Banco de dados atualizado! {atualizados} FII(s) sincronizados com sucesso.")
+    if atualizados_total > 0:
+        st.success(f"Sucesso! {atualizados_total} ativos (FIIs e Ações) atualizados no banco de dados.")
     else:
-        st.warning("Aviso: Nenhuma cotação foi atualizada. Verifique se os tickers estão corretos (ex: HGLG11) e sem espaços.")
-
+        st.warning("⚠️ Nenhum ativo foi atualizado. Verifique se os tickers de ações estão corretos (ex: PETR4, VALE3).")
 # ---- MENU LATERAL TECNOLÓGICO ----
 with st.sidebar:
     st.markdown("<h2 style='text-align: center; color: #4DA8DA; letter-spacing: 2px;'>TECH LUVICS</h2>", unsafe_allow_html=True)
