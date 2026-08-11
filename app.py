@@ -352,16 +352,16 @@ elif menu == "Cadastro e Operações":
         
         # Correção do Erro pd.read_sql
         try:
-            df_ativos = pd.read_sql(f"SELECT nome FROM {tabela}", conn)
+            df_ativos = pd.read_sql(f"SELECT ticker FROM {tabela}", conn)
         except Exception as e:
             st.error(f"Tabela {tabela} não encontrada no banco de dados. Cadastre um ativo ou verifique o banco de dados. Detalhes: {e}")
-            df_ativos = pd.DataFrame(columns=['nome'])
+            df_ativos = pd.DataFrame(columns=['ticker'])
             
         if df_ativos.empty:
             st.warning("Nenhum ativo cadastrado nesta categoria. Adicione ativos na aba ao lado primeiro.")
         else:
             with st.form("form_op"):
-                ativo_selecionado = st.selectbox("Ativo", df_ativos['nome'].tolist())
+                ativo_selecionado = st.selectbox("Ativo", df_ativos['ticker'].tolist())
                 tipo_op = st.selectbox("Tipo de Ordem", ["Compra", "Venda"])
                 data_op = st.date_input("Data")
                 
@@ -386,11 +386,11 @@ elif menu == "Cadastro e Operações":
                                      (data_op.strftime('%Y-%m-%d'), tipo_op, ativo_selecionado, tipo_ativo_op, qtd, preco, val_total))
                         
                         if tipo_ativo_op == "FIIs":
-                            conn.execute("UPDATE fundos SET total_investido = total_investido + ?, quantidade_cotas = quantidade_cotas + ? WHERE nome = ?", (valor_calc, qtd_calc, ativo_selecionado))
+                            conn.execute("UPDATE fundos SET total_investido = total_investido + ?, quantidade_cotas = quantidade_cotas + ? WHERE ticker = ?", (valor_calc, qtd_calc, ativo_selecionado))
                         elif tipo_ativo_op == "Ações":
-                            conn.execute("UPDATE acoes SET total_investido = total_investido + ? WHERE nome = ?", (valor_calc, ativo_selecionado))
+                            conn.execute("UPDATE acoes SET total_investido = total_investido + ? WHERE ticker = ?", (valor_calc, ativo_selecionado))
                         else:
-                            conn.execute("UPDATE renda_fixa SET total_investido = total_investido + ? WHERE nome = ?", (valor_calc, ativo_selecionado))
+                            conn.execute("UPDATE renda_fixa SET total_investido = total_investido + ? WHERE ticker = ?", (valor_calc, ativo_selecionado))
                             
                         conn.commit()
                         st.success("Operação realizada com sucesso. Patrimônio atualizado!")
