@@ -125,18 +125,76 @@ def buscar_indicadores(fii):
         return val_clean, pvp_clean, dy_clean
     except Exception:
         return None, None, None
-
+    
 def atualizar_cotacoes():
     conn = get_connection()
     fundos_df = pd.read_sql("SELECT ticker FROM fundos", conn)
+    
+    if fundos_df.empty:
+        conn.close()
+        st.warning("Nenhum fundo cadastrado no banco de dados para atualizar.")
+        return
+
+    session = requests.Session()
+    session.headers.update({
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Referer': 'https://statusinvest.com.br/'
+    })
+
+    atualizados = 0
     for _, row in fundos_df.iterrows():
         fii = row['ticker']
-        val, pvp, dy = buscar_indicadores(fii)
-        if val or pvp or dy:
-            conn.execute("UPDATE fundos SET valor_atual = ?, p_vp = ?, dy = ? WHERE ticker = ?", (val, pvp, dy, fii))
+        url = f'https://statusinvest.com.br/fundos-imobiliarios/{fii.lower().strip()}'
+        
+        try:
+            response = session.get(url, timeout=12)
+            if response.status_code != 200:
+                continue
+
+            soup = BeautifulSoup(response.text, 'html.parser')
+
+            valor_atual_text = extrair_indicador(soup, ['valor atual', 'valor atual do ativo'])
+            pvp_text = extrair_indicador(soup, ['p/vp', 'pvp'])
+            dy_text = extrair_indicador(soup, ['dividend yield', 'dy'])
+
+            # Função auxiliar interna segura para conversão numérica
+            def limpar_valor(texto, eh_porcentagem=False):
+                if not texto:
+                    return 0.0
+                try:
+                    t = str(texto).replace('R$', '').replace('%', '').replace('\xa0', '').strip()
+                    # Se tiver ponto e vírgula (ex: 1.234,56)
+                    if '.' in t and ',' in t:
+                        t = t.replace('.', '').replace(',', '.')
+                    elif ',' in t:
+                        t = t.replace(',', '.')
+                    return float(t)
+                except:
+                    return 0.0
+
+            val_clean = limpar_valor(valor_atual_text)
+            pvp_clean = limpar_valor(pvp_text)
+            dy_clean = limpar_valor(dy_text)
+
+            # Executa o update no banco mesmo se alguns indicadores vierem zerados, desde que ache o preço
+            if val_clean > 0:
+                conn.execute(
+                    "UPDATE fundos SET cota_atual = ?, pvp = ?, dy = ? WHERE ticker = ?", 
+                    (val_clean, pvp_clean, dy_clean, fii)
+                )
+                atualizados += 1
+        except Exception:
+            continue
+
     conn.commit()
     conn.close()
-    st.success("Cotações de FIIs atualizadas com sucesso diretamente do StatusInvest!")
+    
+    if atualizados > 0:
+        st.success(f"Banco de dados atualizado! {atualizados} FII(s) sincronizados com sucesso.")
+    else:
+        st.warning("Aviso: Nenhuma cotação foi atualizada. Verifique se os tickers estão corretos (ex: HGLG11) e sem espaços.")
 
 # ---- MENU LATERAL TECNOLÓGICO ----
 with st.sidebar:
