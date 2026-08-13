@@ -160,7 +160,6 @@ def atualizar_cotacoes():
                     dy_clean = float(dy_txt.replace(',', '.').replace('%', '').strip()) if dy_txt else 0.0
 
                     if val_clean > 0:
-                        # Agora atualizamos também a cota_atual para ações
                         conn.execute("UPDATE acoes SET cota_atual = ?, dy = ? WHERE ticker = ?", (val_clean, dy_clean, acao))
                         atualizados_total += 1
             except:
@@ -324,7 +323,7 @@ if menu == "Dashboard":
     # --- EXPANDER: INSPEÇÃO E FILTRO DA TABELA DE CONTROLE MENSAL ---
     with st.expander("🔍 Inspecionar Registros da Tabela de Controle Mensal"):
         if not controle_df.empty:
-            st.markdown("#### 🛠️ Filtros de Análise de Gastos e Médias")
+            st.markdown("#### 🛠️ Filtros de Análise")
             
             col_f1, col_f2 = st.columns([1, 2])
             
@@ -335,11 +334,15 @@ if menu == "Dashboard":
             df_ano = controle_df[controle_df['ano'] == ano_filtro].copy()
             meses_disponiveis = sorted(df_ano['mes'].unique())
             
+            # Deixar mês atual como default selecionado, permitindo adicionar mais
+            mes_atual = hoje.month
+            default_meses = [mes_atual] if mes_atual in meses_disponiveis else (meses_disponiveis[:1] if len(meses_disponiveis) > 0 else [])
+            
             with col_f2:
                 meses_filtro = st.multiselect(
-                    "Selecione o(s) Mês(es) para Analisar (Ex: últimos 3 meses)",
+                    "Selecione o(s) Mês(es) para Analisar (Adicione outros se desejar)",
                     options=meses_disponiveis,
-                    default=meses_disponiveis,
+                    default=default_meses,
                     format_func=lambda x: f"{x} - {NOMES_MESES.get(int(x), str(x))}"
                 )
             
@@ -349,24 +352,25 @@ if menu == "Dashboard":
             else:
                 df_filtrado = df_ano.copy()
 
-            # Mapeamento dinâmico de colunas
-            col_saidas = next((c for c in ['saidas', 'saida', 'despesas'] if c in df_filtrado.columns), None)
-            col_entradas = next((c for c in ['entradas', 'entrada', 'receitas'] if c in df_filtrado.columns), None)
-            col_saldo = next((c for c in ['saldo'] if c in df_filtrado.columns), None)
-
-            num_meses_sel = len(meses_filtro) if meses_filtro else len(meses_disponiveis)
-            total_gastos = df_filtrado[col_saidas].sum() if col_saidas else 0.0
-            media_gastos = total_gastos / num_meses_sel if num_meses_sel > 0 else 0.0
-            total_investido_entradas = df_filtrado[col_entradas].sum() if col_entradas else 0.0
-            saldo_periodo = df_filtrado[col_saldo].sum() if col_saldo else (total_investido_entradas - total_gastos)
-
-            # Métricas consolidadas dentro da aba
-            st.markdown("##### 📊 Resumo do Período Selecionado")
-            f_m1, f_m2, f_m3, f_m4 = st.columns(4)
-            f_m1.metric("Gasto Médio Mensal", f"R$ {media_gastos:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.'))
-            f_m2.metric("Total Gasto (Saídas)", f"R$ {total_gastos:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.'))
-            f_m3.metric("Total Entradas / Receitas", f"R$ {total_investido_entradas:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.'))
-            f_m4.metric("Saldo do Período", f"R$ {saldo_periodo:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.'))
+            st.markdown("##### 📊 Totalizador Personalizado")
+            
+            # Seleciona apenas as colunas numéricas que importam
+            colunas_ignorar = ['id', 'ano', 'mes', 'observacao']
+            colunas_numericas = [col for col in df_filtrado.columns if col not in colunas_ignorar]
+            
+            col_c1, col_c2 = st.columns([1, 2])
+            with col_c1:
+                col_selecionada = st.selectbox("Selecione a coluna para somar:", options=colunas_numericas)
+            
+            # Soma apenas a coluna solicitada
+            if col_selecionada:
+                # Converte para numérico de forma robusta e soma
+                total_selecionado = pd.to_numeric(df_filtrado[col_selecionada].apply(para_float), errors='coerce').fillna(0.0).sum()
+            else:
+                total_selecionado = 0.0
+            
+            with col_c2:
+                st.metric(f"Total {str(col_selecionada).replace('_', ' ').capitalize() if col_selecionada else ''}", f"R$ {total_selecionado:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.'))
 
             st.markdown("##### 📋 Registros Filtrados")
             st.dataframe(df_filtrado, width="stretch")
@@ -384,40 +388,86 @@ elif menu == "Controle Mensal":
     with st.form("form_controle"):
         col1, col2 = st.columns(2)
         with col1:
-            mes = st.number_input("Mês", min_value=1, max_value=12, value=int(hoje.month))
-            caixa = st.number_input("Saldo Caixa Final (R$)", value=0.0, step=100.0)
-            entradas = st.number_input("Entradas / Receitas do Mês (R$)", value=0.0, step=100.0)
-        with col2:
             ano = st.number_input("Ano", min_value=2000, max_value=2100, value=int(hoje.year))
-            saidas = st.number_input("Saídas / Gastos do Mês (R$)", value=0.0, step=100.0)
-            observacao = st.text_input("Observação", value="")
+        with col2:
+            mes = st.number_input("Mês", min_value=1, max_value=12, value=int(hoje.month))
             
-        saldo = entradas - saidas
-        st.info(f"💡 **Saldo Calculado do Mês (Entradas - Saídas):** R$ {saldo:,.2f}")
+        st.markdown("---")
         
-        btn_salvar = st.form_submit_button("💾 Salvar Mês")
+        col3, col4 = st.columns(2)
+        with col3:
+            opcoes_colunas = ["entrada", "clear", "poupanca", "caixinha", "aluguel", "contas", "uber_carro", "gastos_gerais"]
+            coluna_alvo = st.selectbox("Adicionar valor a qual coluna?", opcoes_colunas)
+        with col4:
+            valor_adicionar = st.number_input("Valor a adicionar (R$)", value=0.0, step=50.0)
+            
+        st.info("💡 **Dica:** O valor informado será adicionado/somado à coluna selecionada para o mês escolhido. Todos os totais e o saldo serão recalculados automaticamente.")
+        
+        btn_salvar = st.form_submit_button("💾 Salvar Lançamento")
         
         if btn_salvar:
             conn = get_connection()
             cursor = conn.cursor()
             
-            # Verifica se já existe o mês/ano gravado
-            cursor.execute("SELECT id FROM controle WHERE ano = ? AND mes = ?", (int(ano), int(mes)))
+            # 1. Buscar o registro do mês atual (se houver) para garantir que somaremos ao valor já existente
+            cursor.execute("SELECT * FROM controle WHERE ano = ? AND mes = ?", (int(ano), int(mes)))
             registro = cursor.fetchone()
             
+            # Extrair dinamicamente nomes de colunas do PRAGMA
+            cursor.execute("PRAGMA table_info(controle)")
+            cols_info = cursor.fetchall()
+            col_names = [info[1] for info in cols_info]
+            
+            # Inicializar dicionário com zeros para todas as categorias
+            valores = {c: 0.0 for c in opcoes_colunas}
+            
+            registro_id = None
             if registro:
+                registro_id = registro[0]
+                # Preencher os valores atuais com os dados do banco
+                for c in opcoes_colunas:
+                    if c in col_names:
+                        idx = col_names.index(c)
+                        val = registro[idx]
+                        valores[c] = float(val) if val is not None else 0.0
+            
+            # 2. Adicionar o valor digitado à categoria escolhida
+            valores[coluna_alvo] += valor_adicionar
+            
+            # 3. Recalcular os Totais e Gastos Exigidos pela regra de negócio
+            total_gastos = valores["aluguel"] + valores["contas"] + valores["uber_carro"] + valores["gastos_gerais"]
+            total_saida = total_gastos + valores["caixinha"] + valores["poupanca"] + valores["clear"]
+            
+            # 4. Obter o caixa do mês anterior
+            mes_ant = mes - 1 if mes > 1 else 12
+            ano_ant = ano if mes > 1 else ano - 1
+            
+            cursor.execute("SELECT caixa FROM controle WHERE ano = ? AND mes = ?", (int(ano_ant), int(mes_ant)))
+            row_ant = cursor.fetchone()
+            caixa_anterior = float(row_ant[0]) if row_ant and row_ant[0] is not None else 0.0
+            
+            # 5. Calcular caixa final do mês (entrada - total_saida + caixa do mes anterior)
+            caixa_atual = valores["entrada"] - total_saida + caixa_anterior
+            
+            # 6. Gravar de volta no banco as informações (Insert se novo ou Update se já existia)
+            if registro_id:
                 cursor.execute("""
                     UPDATE controle 
-                    SET caixa = ?, entradas = ?, saidas = ?, saldo = ?, observacao = ?
-                    WHERE id = ?
-                """, (caixa, entradas, saidas, saldo, observacao, registro[0]))
-                st.success(f"✅ Mês {mes}/{ano} atualizado com sucesso!")
+                    SET entrada=?, clear=?, poupanca=?, caixinha=?, aluguel=?, contas=?, 
+                        uber_carro=?, gastos_gerais=?, total_gastos=?, total_saida=?, caixa=?
+                    WHERE id=?
+                """, (valores["entrada"], valores["clear"], valores["poupanca"], valores["caixinha"], 
+                      valores["aluguel"], valores["contas"], valores["uber_carro"], 
+                      valores["gastos_gerais"], total_gastos, total_saida, caixa_atual, registro_id))
+                st.success(f"✅ Lançamento computado no mês {mes}/{ano}! Categoria '{coluna_alvo}' recebeu + R$ {valor_adicionar:.2f}.")
             else:
                 cursor.execute("""
-                    INSERT INTO controle (ano, mes, caixa, entradas, saidas, saldo, observacao)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, (int(ano), int(mes), caixa, entradas, saidas, saldo, observacao))
-                st.success(f"✅ Mês {mes}/{ano} cadastrado com sucesso!")
+                    INSERT INTO controle (ano, mes, entrada, clear, poupanca, caixinha, aluguel, contas, uber_carro, gastos_gerais, total_gastos, total_saida, caixa)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (int(ano), int(mes), valores["entrada"], valores["clear"], valores["poupanca"], 
+                      valores["caixinha"], valores["aluguel"], valores["contas"], valores["uber_carro"], 
+                      valores["gastos_gerais"], total_gastos, total_saida, caixa_atual))
+                st.success(f"✅ Mês {mes}/{ano} gerado e lançamento inserido com sucesso!")
                 
             conn.commit()
             conn.close()
@@ -640,12 +690,12 @@ elif menu == "Cadastro e Operações":
                             conn.execute("""
                                 INSERT INTO operacoes (ticker, data_op, tipo, quantidade, valor_unitario, valor_total) 
                                 VALUES (?, ?, ?, ?, ?, ?)
-                            """, (ativo_selecionado, data_op.strftime('%Y-%m-%d'), tipo_op, 1, val_total, val_total))
+                            """, (ativo_selecionado, data_op.strftime('%Y-%m-%d'), tipo_op, qtd, val_total, val_total))
                             
                         conn.commit()
-                        st.success("Operação realizada! Posição de cotas atualizada no patrimônio.")
+                        st.success("Operação salva com sucesso!")
                     except Exception as e:
-                        st.error(f"Erro ao registrar a operação: {e}")
+                        st.error(f"Erro ao lançar operação: {e}")
                         
     conn.close()
 
