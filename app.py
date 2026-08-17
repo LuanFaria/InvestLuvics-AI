@@ -543,132 +543,213 @@ if menu == "Dashboard":
         else:
             st.write("A tabela de controle está vazia.")
 
+
 # ==============================================================================
 # 📝 MENU 2: CONTROLE MENSAL
 # ==============================================================================
 elif menu == "Controle Mensal":
-    st.title("📝 Lançamento de Controle Mensal")
+    st.title("📝 Controle Mensal")
 
-    hoje = datetime.now()
+    tab_lancar, tab_gerenciar = st.tabs(["➕ Lançamento Rápido", "✏️ Editar / Excluir Mês"])
 
-    with st.form("form_controle"):
-        col1, col2 = st.columns(2)
-        with col1:
-            ano = st.number_input("Ano", min_value=2000, max_value=2100, value=int(hoje.year))
-        with col2:
-            mes = st.number_input("Mês", min_value=1, max_value=12, value=int(hoje.month))
+    # --- ABA 1: SEU CÓDIGO ORIGINAL DE LANÇAMENTO ---
+    with tab_lancar:
+        hoje = datetime.now()
 
-        st.markdown("---")
+        with st.form("form_controle"):
+            col1, col2 = st.columns(2)
+            with col1:
+                ano = st.number_input("Ano", min_value=2000, max_value=2100, value=int(hoje.year))
+            with col2:
+                mes = st.number_input("Mês", min_value=1, max_value=12, value=int(hoje.month))
 
-        col3, col4 = st.columns(2)
-        with col3:
-            opcoes_colunas = [
-                "entrada", "clear", "poupanca", "caixinha",
-                "aluguel", "contas", "uber_carro", "gastos_gerais",
-            ]
-            coluna_alvo = st.selectbox("Adicionar valor a qual coluna?", opcoes_colunas)
-        with col4:
-            valor_adicionar = st.number_input("Valor a adicionar (R$)", value=0.0, step=50.0)
+            st.markdown("---")
 
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.markdown("**🏦 A conta bancária será descontada (ou creditada se for Entrada):**")
-        # Botões menores implementados com st.radio horizontal (Visual clean)
-        conta_selecionada = st.radio(
-            "Conta bancária",
-            ["Nenhuma", "Bradesco", "Mercado Pago"],
-            horizontal=True,
-            label_visibility="collapsed"
-        )
+            col3, col4 = st.columns(2)
+            with col3:
+                opcoes_colunas = [
+                    "entrada", "clear", "poupanca", "caixinha",
+                    "aluguel", "contas", "uber_carro", "gastos_gerais",
+                ]
+                coluna_alvo = st.selectbox("Adicionar valor a qual coluna?", opcoes_colunas)
+            with col4:
+                valor_adicionar = st.number_input("Valor a adicionar (R$)", value=0.0, step=50.0)
 
-        st.info("💡 **Dica:** Os saldos das contas bancárias aparecem atualizados apenas na aba Dashboard.")
-        btn_salvar = st.form_submit_button("💾 Salvar Lançamento", width="stretch")
-
-        if btn_salvar:
-            conn = get_connection()
-            cursor = conn.cursor()
-
-            cursor.execute("SELECT * FROM controle WHERE ano = ? AND mes = ?", (int(ano), int(mes)))
-            registro = cursor.fetchone()
-
-            cursor.execute("PRAGMA table_info(controle)")
-            cols_info = cursor.fetchall()
-            col_names = [info[1] for info in cols_info]
-
-            opcoes_colunas_db = opcoes_colunas + ["saldo_bradesco", "saldo_mercado_pago"]
-            valores = {c: 0.0 for c in opcoes_colunas_db}
-
-            caixa_anterior, bradesco_ant, mp_ant = obter_saldos_mes_anterior(conn, int(ano), int(mes))
-
-            registro_id = None
-            if registro:
-                registro_id = registro[0]
-                for c in opcoes_colunas_db:
-                    if c in col_names:
-                        idx = col_names.index(c)
-                        valores[c] = para_float(registro[idx])
-            else:
-                valores["saldo_bradesco"] = bradesco_ant
-                valores["saldo_mercado_pago"] = mp_ant
-
-            # Atualiza a coluna financeira principal selecionada
-            valores[coluna_alvo] += valor_adicionar
-
-            # Filtro das carteiras (Bradesco / Mercado Pago)
-            if conta_selecionada == "Bradesco":
-                if coluna_alvo == "entrada":
-                    valores["saldo_bradesco"] += valor_adicionar
-                else:
-                    valores["saldo_bradesco"] -= valor_adicionar
-            elif conta_selecionada == "Mercado Pago":
-                if coluna_alvo == "entrada":
-                    valores["saldo_mercado_pago"] += valor_adicionar
-                else:
-                    valores["saldo_mercado_pago"] -= valor_adicionar
-
-            # Cálculos do Mês
-            total_gastos = (valores["aluguel"] + valores["contas"] + valores["uber_carro"] + valores["gastos_gerais"])
-            total_saida = (total_gastos + valores["caixinha"] + valores["poupanca"] + valores["clear"])
-            caixa_atual_calculado = (valores["entrada"] - total_saida) + caixa_anterior
-
-            if registro_id:
-                cursor.execute(
-                    """
-                    UPDATE controle 
-                    SET entrada=?, clear=?, poupanca=?, caixinha=?, aluguel=?, contas=?, 
-                        uber_carro=?, gastos_gerais=?, total_gastos=?, total_saida=?, caixa=?,
-                        saldo_bradesco=?, saldo_mercado_pago=?
-                    WHERE id=?
-                    """,
-                    (
-                        valores["entrada"], valores["clear"], valores["poupanca"], valores["caixinha"], 
-                        valores["aluguel"], valores["contas"], valores["uber_carro"], valores["gastos_gerais"], 
-                        total_gastos, total_saida, caixa_atual_calculado,
-                        valores["saldo_bradesco"], valores["saldo_mercado_pago"],
-                        registro_id,
-                    ),
-                )
-            else:
-                cursor.execute(
-                    """
-                    INSERT INTO controle (ano, mes, entrada, clear, poupanca, caixinha, aluguel, contas, uber_carro, gastos_gerais, total_gastos, total_saida, caixa, saldo_bradesco, saldo_mercado_pago)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        int(ano), int(mes), valores["entrada"], valores["clear"], valores["poupanca"], 
-                        valores["caixinha"], valores["aluguel"], valores["contas"], valores["uber_carro"], 
-                        valores["gastos_gerais"], total_gastos, total_saida, caixa_atual_calculado,
-                        valores["saldo_bradesco"], valores["saldo_mercado_pago"]
-                    ),
-                )
-
-            conn.commit()
-            conn.close()
-
-            st.success(
-                f"✅ Lançamento salvo no mês {mes}/{ano}! Categoria '{coluna_alvo}' atualizada (+ R$ {valor_adicionar:.2f})."
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.markdown("**🏦 A conta bancária será descontada (ou creditada se for Entrada):**")
+            
+            conta_selecionada = st.radio(
+                "Conta bancária",
+                ["Bradesco", "Mercado Pago"],
+                horizontal=True,
+                label_visibility="collapsed"
             )
-            if conta_selecionada != "Nenhuma":
-                st.success(f"💰 O banco **{conta_selecionada}** sofreu a dedução/acréscimo invisível do valor!")
+
+            st.info("💡 **Dica:** Os saldos das contas bancárias aparecem atualizados apenas na aba Dashboard.")
+            btn_salvar = st.form_submit_button("💾 Salvar Lançamento", width="stretch")
+
+            if btn_salvar:
+                conn = get_connection()
+                cursor = conn.cursor()
+
+                cursor.execute("SELECT * FROM controle WHERE ano = ? AND mes = ?", (int(ano), int(mes)))
+                registro = cursor.fetchone()
+
+                cursor.execute("PRAGMA table_info(controle)")
+                cols_info = cursor.fetchall()
+                col_names = [info[1] for info in cols_info]
+
+                opcoes_colunas_db = opcoes_colunas + ["saldo_bradesco", "saldo_mercado_pago"]
+                valores = {c: 0.0 for c in opcoes_colunas_db}
+
+                caixa_anterior, bradesco_ant, mp_ant = obter_saldos_mes_anterior(conn, int(ano), int(mes))
+
+                registro_id = None
+                if registro:
+                    registro_id = registro[0]
+                    for c in opcoes_colunas_db:
+                        if c in col_names:
+                            idx = col_names.index(c)
+                            valores[c] = para_float(registro[idx])
+                else:
+                    valores["saldo_bradesco"] = bradesco_ant
+                    valores["saldo_mercado_pago"] = mp_ant
+
+                valores[coluna_alvo] += valor_adicionar
+
+                if conta_selecionada == "Bradesco":
+                    if coluna_alvo == "entrada":
+                        valores["saldo_bradesco"] += valor_adicionar
+                    else:
+                        valores["saldo_bradesco"] -= valor_adicionar
+                elif conta_selecionada == "Mercado Pago":
+                    if coluna_alvo == "entrada":
+                        valores["saldo_mercado_pago"] += valor_adicionar
+                    else:
+                        valores["saldo_mercado_pago"] -= valor_adicionar
+
+                total_gastos = (valores["aluguel"] + valores["contas"] + valores["uber_carro"] + valores["gastos_gerais"])
+                total_saida = (total_gastos + valores["caixinha"] + valores["poupanca"] + valores["clear"])
+                caixa_atual_calculado = (valores["entrada"] - total_saida) + caixa_anterior
+
+                if registro_id:
+                    cursor.execute(
+                        """
+                        UPDATE controle 
+                        SET entrada=?, clear=?, poupanca=?, caixinha=?, aluguel=?, contas=?, 
+                            uber_carro=?, gastos_gerais=?, total_gastos=?, total_saida=?, caixa=?,
+                            saldo_bradesco=?, saldo_mercado_pago=?
+                        WHERE id=?
+                        """,
+                        (
+                            valores["entrada"], valores["clear"], valores["poupanca"], valores["caixinha"], 
+                            valores["aluguel"], valores["contas"], valores["uber_carro"], valores["gastos_gerais"], 
+                            total_gastos, total_saida, caixa_atual_calculado,
+                            valores["saldo_bradesco"], valores["saldo_mercado_pago"],
+                            registro_id,
+                        ),
+                    )
+                else:
+                    cursor.execute(
+                        """
+                        INSERT INTO controle (ano, mes, entrada, clear, poupanca, caixinha, aluguel, contas, uber_carro, gastos_gerais, total_gastos, total_saida, caixa, saldo_bradesco, saldo_mercado_pago)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            int(ano), int(mes), valores["entrada"], valores["clear"], valores["poupanca"], 
+                            valores["caixinha"], valores["aluguel"], valores["contas"], valores["uber_carro"], 
+                            valores["gastos_gerais"], total_gastos, total_saida, caixa_atual_calculado,
+                            valores["saldo_bradesco"], valores["saldo_mercado_pago"]
+                        ),
+                    )
+
+                conn.commit()
+                conn.close()
+
+                st.success(f"✅ Lançamento salvo no mês {mes}/{ano}! Categoria '{coluna_alvo}' atualizada (+ R$ {valor_adicionar:.2f}).")
+                if conta_selecionada != "Nenhuma":
+                    st.success(f"💰 O banco **{conta_selecionada}** sofreu a dedução/acréscimo invisível do valor!")
+
+    # --- ABA 2: NOVA ÁREA DE GERENCIAMENTO ---
+    with tab_gerenciar:
+        st.subheader("Gerenciar Meses Fechados")
+        conn = get_connection()
+        df_controle = pd.read_sql("SELECT id, mes, ano, entrada, aluguel, contas, uber_carro, gastos_gerais, clear, poupanca, caixinha FROM controle ORDER BY ano DESC, mes DESC", conn)
+
+        if not df_controle.empty:
+            
+            # --- NOVIDADE: Limpeza de dados para evitar os erros do Arrow e ValueError ---
+            # 1. Garante que id, mes e ano sejam lidos estritamente como números inteiros (int)
+            for col in ['id', 'mes', 'ano']:
+                df_controle[col] = pd.to_numeric(df_controle[col], errors='coerce').fillna(0).astype(int)
+
+            # 2. Garante que colunas financeiras virem float (substituindo vírgula por ponto do banco de dados)
+            colunas_financeiras = ['entrada', 'aluguel', 'contas', 'uber_carro', 'gastos_gerais', 'clear', 'poupanca', 'caixinha']
+            for col in colunas_financeiras:
+                if df_controle[col].dtype == 'object':  # Se veio do SQLite como texto
+                    df_controle[col] = df_controle[col].astype(str).str.replace(',', '.', regex=False)
+                df_controle[col] = pd.to_numeric(df_controle[col], errors='coerce').fillna(0.0)
+            # -----------------------------------------------------------------------------
+
+            st.dataframe(df_controle, width="stretch", hide_index=True)
+
+            opcoes = [f"{int(row['mes']):02d}/{int(row['ano'])} (ID: {int(row['id'])})" for _, row in df_controle.iterrows()]
+            escolha = st.selectbox("Selecione o registro para editar/excluir:", opcoes)
+            id_selecionado = int(escolha.split("ID: ")[1].replace(")", ""))
+
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM controle WHERE id = ?", (id_selecionado,))
+            registro = cursor.fetchone()
+            cursor.execute("PRAGMA table_info(controle)")
+            cols = [info[1] for info in cursor.fetchall()]
+            dados_atuais = dict(zip(cols, registro))
+
+            col_ed1, col_ed2 = st.columns([2, 1])
+            
+            with col_ed1:
+                with st.form("form_editar_mes"):
+                    st.markdown("### ✏️ Editar Valores Manuais")
+                    colA, colB = st.columns(2)
+                    with colA:
+                        # Usando o seu para_float para garantir que a interface aceite os dados
+                        n_ent = st.number_input("Entrada", value=para_float(dados_atuais.get("entrada", 0)), step=10.0)
+                        n_alu = st.number_input("Aluguel", value=para_float(dados_atuais.get("aluguel", 0)), step=10.0)
+                        n_con = st.number_input("Contas", value=para_float(dados_atuais.get("contas", 0)), step=10.0)
+                        n_ubr = st.number_input("Uber/Carro", value=para_float(dados_atuais.get("uber_carro", 0)), step=10.0)
+                        n_gst = st.number_input("Gastos Gerais", value=para_float(dados_atuais.get("gastos_gerais", 0)), step=10.0)
+                    with colB:
+                        n_clr = st.number_input("Clear", value=para_float(dados_atuais.get("clear", 0)), step=10.0)
+                        n_pop = st.number_input("Poupança", value=para_float(dados_atuais.get("poupanca", 0)), step=10.0)
+                        n_cai = st.number_input("Caixinha", value=para_float(dados_atuais.get("caixinha", 0)), step=10.0)
+                        n_bra = st.number_input("Saldo Bradesco", value=para_float(dados_atuais.get("saldo_bradesco", 0)), step=10.0)
+                        n_mer = st.number_input("Saldo M. Pago", value=para_float(dados_atuais.get("saldo_mercado_pago", 0)), step=10.0)
+
+                    if st.form_submit_button("💾 Salvar Alterações", width="stretch"):
+                        t_gastos = n_alu + n_con + n_ubr + n_gst
+                        t_saida = t_gastos + n_clr + n_pop + n_cai
+                        cx_ant, _, _ = obter_saldos_mes_anterior(conn, int(dados_atuais["ano"]), int(dados_atuais["mes"]))
+                        novo_caixa = (n_ent - t_saida) + cx_ant
+
+                        cursor.execute("""
+                            UPDATE controle SET entrada=?, aluguel=?, contas=?, uber_carro=?, gastos_gerais=?,
+                            clear=?, poupanca=?, caixinha=?, saldo_bradesco=?, saldo_mercado_pago=?,
+                            total_gastos=?, total_saida=?, caixa=? WHERE id=?
+                        """, (n_ent, n_alu, n_con, n_ubr, n_gst, n_clr, n_pop, n_cai, n_bra, n_mer, t_gastos, t_saida, novo_caixa, id_selecionado))
+                        conn.commit()
+                        st.success("✅ Mês atualizado!")
+                        st.rerun()
+
+            with col_ed2:
+                st.markdown("### 🗑️ Excluir")
+                st.warning("Isso apagará o mês inteiro. Ação irreversível.")
+                if st.button("🚨 Excluir Mês", width="stretch"):
+                    cursor.execute("DELETE FROM controle WHERE id=?", (id_selecionado,))
+                    conn.commit()
+                    st.success("Mês excluído!")
+                    st.rerun()
+        else:
+            st.info("Nenhum mês cadastrado ainda.")
+        conn.close()
 
 # ==============================================================================
 # 💼 MENU 3: TABELAS & CARTEIRA
@@ -712,12 +793,16 @@ elif menu == "Tabelas & Carteira":
 # ==============================================================================
 # ➕ MENU 4: CADASTRO E OPERAÇÕES
 # ==============================================================================
+# ==============================================================================
+# ➕ MENU 4: CADASTRO E OPERAÇÕES
+# ==============================================================================
 elif menu == "Cadastro e Operações":
     st.title("➕ Cadastro e Operações")
 
-    tab1, tab2 = st.tabs(["Adicionar Novo Ativo", "Lançar Operação (Compra/Venda)"])
+    tab1, tab2, tab3 = st.tabs(["Adicionar Novo Ativo", "Lançar Operação", "Editar / Excluir Histórico"])
     conn = get_connection()
 
+    # --- ABA 1 E 2: SEU CÓDIGO ORIGINAL ---
     with tab1:
         tipo_ativo_novo = st.selectbox("Selecione a Categoria para Cadastro", ["FIIs", "Ações", "Renda Fixa"], key="cat_novo")
         with st.form("form_novo"):
@@ -818,6 +903,86 @@ elif menu == "Cadastro e Operações":
                     except Exception as e:
                         st.error(f"Erro ao processar operação: {e}")
 
+    # --- ABA 3: NOVA ÁREA DE GERENCIAMENTO ---
+    with tab3:
+        st.subheader("Gerenciar Histórico e Ativos")
+        
+        escolha_gerenciar = st.radio("O que deseja editar/excluir?", ["Operações (Histórico)", "Ativos da Carteira"], horizontal=True)
+
+        if escolha_gerenciar == "Operações (Histórico)":
+            df_ops = pd.read_sql("SELECT id, ticker, data_op, tipo, quantidade, valor_total FROM operacoes ORDER BY id DESC", conn)
+            if not df_ops.empty:
+                st.dataframe(df_ops, width="stretch", hide_index=True)
+                
+                opcoes_op = [f"ID: {row['id']} | {row['ticker']} - {row['tipo']} ({row['data_op']})" for _, row in df_ops.iterrows()]
+                op_selecionada = st.selectbox("Selecione a operação para excluir:", opcoes_op)
+                id_op = int(op_selecionada.split(" |")[0].replace("ID: ", ""))
+
+                st.info("💡 **Dica:** Excluir uma operação não altera o saldo do ativo na carteira. Se precisar, ajuste o saldo do ativo na opção 'Ativos da Carteira' acima.")
+                
+                if st.button("🗑️ Excluir Operação", type="primary"):
+                    conn.execute("DELETE FROM operacoes WHERE id = ?", (id_op,))
+                    conn.commit()
+                    st.success("Operação excluída do histórico!")
+                    st.rerun()
+            else:
+                st.info("Nenhuma operação registrada.")
+
+        elif escolha_gerenciar == "Ativos da Carteira":
+            cat_ativo = st.selectbox("Categoria do Ativo", ["fundos", "acoes", "renda_fixa"])
+            
+            if cat_ativo == "renda_fixa":
+                df_ativos_cad = pd.read_sql(f"SELECT ticker, total_investido FROM {cat_ativo}", conn)
+            else:
+                df_ativos_cad = pd.read_sql(f"SELECT ticker, num_cotas, total_investido FROM {cat_ativo}", conn)
+
+            if not df_ativos_cad.empty:
+                st.dataframe(df_ativos_cad, width="stretch", hide_index=True)
+                ticker_del = st.selectbox("Selecione o ativo:", df_ativos_cad["ticker"].tolist())
+
+                cursor = conn.cursor()
+                if cat_ativo != "renda_fixa":
+                    cursor.execute(f"SELECT num_cotas, total_investido FROM {cat_ativo} WHERE ticker = ?", (ticker_del,))
+                    dados_ativo = cursor.fetchone()
+                    n_cotas_atual = float(dados_ativo[0])
+                    t_inv_atual = float(dados_ativo[1])
+                else:
+                    cursor.execute(f"SELECT total_investido FROM {cat_ativo} WHERE ticker = ?", (ticker_del,))
+                    dados_ativo = cursor.fetchone()
+                    n_cotas_atual = 0.0
+                    t_inv_atual = float(dados_ativo[0])
+
+                col_atv1, col_atv2 = st.columns([2, 1])
+                
+                with col_atv1:
+                    with st.form("form_editar_ativo"):
+                        st.markdown(f"### ✏️ Ajustar Saldos ({ticker_del})")
+                        if cat_ativo != "renda_fixa":
+                            n_cotas_nova = st.number_input("Número de Cotas Corrigido", value=n_cotas_atual, step=1.0)
+                        else:
+                            n_cotas_nova = 0.0
+                        t_investido_novo = st.number_input("Total Investido Corrigido (R$)", value=t_inv_atual, step=10.0)
+
+                        if st.form_submit_button("💾 Salvar Correção", width="stretch"):
+                            if cat_ativo != "renda_fixa":
+                                cursor.execute(f"UPDATE {cat_ativo} SET num_cotas = ?, total_investido = ? WHERE ticker = ?", (n_cotas_nova, t_investido_novo, ticker_del))
+                            else:
+                                cursor.execute(f"UPDATE {cat_ativo} SET total_investido = ? WHERE ticker = ?", (t_investido_novo, ticker_del))
+                            conn.commit()
+                            st.success("Saldos do ativo corrigidos!")
+                            st.rerun()
+
+                with col_atv2:
+                    st.markdown("### 🗑️ Excluir Ativo")
+                    st.warning("Remove o ativo da carteira.")
+                    if st.button("🚨 Excluir", width="stretch"):
+                        cursor.execute(f"DELETE FROM {cat_ativo} WHERE ticker = ?", (ticker_del,))
+                        conn.commit()
+                        st.success("Ativo removido!")
+                        st.rerun()
+            else:
+                st.info("Nenhum ativo nesta categoria.")
+
     conn.close()
 
 # ==============================================================================
@@ -849,32 +1014,148 @@ elif menu == "Calculadora de Juros":
             c1.metric("💰 Valor Final Total", f"R$ {montante:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
             c2.metric("📈 Apenas Juros Rendidos", f"R$ {lucro:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
 
+
 # ==============================================================================
 # 🤖 MENU 6: IA RECOMENDAÇÕES
 # ==============================================================================
 elif menu == "IA Recomendações":
-  st.title("🤖 IA & Recomendações de Carteira")
+    st.title("🤖 IA & Recomendações de Carteira")
+    st.write("Utilize a Inteligência Artificial para analisar sua carteira, evitar armadilhas e descobrir onde aportar seu dinheiro com base no cenário atual.")
 
-  conn = get_connection()
-  try:
-    df_f = limpar_dataframe_numerico(
-        pd.read_sql("SELECT * FROM fundos", conn)
-    )
-    if not df_f.empty and "pvp" in df_f.columns:
-      descontados = df_f[
-          (df_f["pvp"] > 0) & (df_f["pvp"] < 1.0) & (df_f["num_cotas"] > 0)
-      ]
-      if not descontados.empty:
-        st.subheader("💡 FIIs na carteira com P/VP < 1.0:")
-        st.dataframe(
-            descontados[["ticker", "segmento", "pvp", "dy", "cota_atual"]],
-            width="stretch",
-        )
-      else:
-        st.info("Nenhum FII descontado (P/VP < 1,00) encontrado no momento.")
-    else:
-      st.info("Cadastre FIIs para visualizar análises.")
-  except Exception as e:
-    st.error(f"Erro ao gerar recomendações: {e}")
-  finally:
-    conn.close()
+    # --- ENTRADA DE DADOS DO USUÁRIO ---
+    st.subheader("⚙️ Parâmetros do Aporte")
+    col1, col2 = st.columns(2)
+    with col1:
+        valor_aporte = st.number_input("Quanto você quer investir agora? (R$)", min_value=10.0, value=300.0, step=50.0)
+    with col2:
+        qtd_ativos = st.number_input("Em quantos ativos deseja dividir esse valor?", min_value=1, max_value=10, value=3, step=1)
+    
+    chave_api = st.text_input("🔑 Chave API do Google Gemini (pegue grátis no Google AI Studio)", type="password", help="Acesse aistudio.google.com para gerar sua chave.")
+
+    if st.button("🧠 Gerar Cenários e Recomendações", type="primary"):
+        if not chave_api:
+            st.warning("⚠️ Insira sua Chave de API do Gemini para utilizar a Inteligência Artificial.")
+        else:
+            with st.spinner("A IA está analisando seus ativos, cruzando dados de mercado e buscando armadilhas ocultas. Aguarde..."):
+                try:
+                    # 1. Configurar a API
+                    import google.generativeai as genai
+                    genai.configure(api_key=chave_api)
+                    
+                    # 2. Coletar os dados da sua carteira no Banco de Dados
+                    conn = get_connection()
+                    
+                    try:
+                        df_acoes = pd.read_sql("SELECT * FROM acoes", conn)
+                        str_acoes = df_acoes.to_dict(orient="records") if not df_acoes.empty else "Nenhuma ação cadastrada."
+                    except: str_acoes = "Tabela de ações indisponível."
+                    
+                    try:
+                        df_fiis = pd.read_sql("SELECT * FROM fundos", conn)
+                        str_fiis = df_fiis.to_dict(orient="records") if not df_fiis.empty else "Nenhum FII cadastrado."
+                    except: str_fiis = "Tabela de FIIs indisponível."
+                    
+                    try:
+                        df_rf = pd.read_sql("SELECT * FROM renda_fixa", conn)
+                        str_rf = df_rf.to_dict(orient="records") if not df_rf.empty else "Nenhuma Renda Fixa cadastrada."
+                    except: str_rf = "Tabela de RF indisponível."
+                    
+                    conn.close()
+
+                    # 3. Criar o Comando (Prompt) Avançado para a IA
+                    prompt = f"""
+                    Você é um analista financeiro sênior, especialista no mercado brasileiro (B3), FIIs e macroeconomia.
+                    Seu cliente tem R$ {valor_aporte:.2f} para investir hoje e quer dividir esse dinheiro em EXATAMENTE {qtd_ativos} ativos.
+
+                    Aqui estão os ativos que ele já possui na carteira e acompanha (avalie estes preferencialmente, mas pode sugerir outros caso a carteira atual seja muito ruim):
+                    Ações: {str_acoes}
+                    FIIs: {str_fiis}
+                    Renda Fixa: {str_rf}
+
+                    Crie um relatório completo com:
+                    1. CENÁRIO CONSERVADOR: Focado em segurança, previsibilidade e proteção (dividendos constantes, empresas consolidadas, FIIs de tijolo resilientes).
+                       - Escolha {qtd_ativos} ativos.
+                       - Diga exatamente quantos Reais (R$) colocar em cada um (a soma deve dar R$ {valor_aporte}).
+                       - Justifique profundamente.
+                    
+                    2. CENÁRIO ARROJADO: Focado em ganho de capital, assimetria de valor e risco calculado.
+                       - Escolha {qtd_ativos} ativos.
+                       - Diga exatamente quantos Reais (R$) colocar em cada um.
+                       - Justifique profundamente.
+
+                    REGRAS CRÍTICAS DE ANÁLISE:
+                    - NÃO olhe apenas para o P/VP e o Dividend Yield. Se um P/VP está muito baixo (ex: < 0.70), explique o porquê. Pode ser risco de inadimplência (calote em CRIs no caso de FIIs de papel), vacância alta, ou empresa em risco financeiro. Identifique se é uma oportunidade (assimetria) ou uma 'Value Trap' (Armadilha de Valor).
+                    - Traga contexto do mundo real: juros atuais (Selic), inflação e cenário econômico no Brasil que impactem essas escolhas.
+                    - Formate a resposta usando Markdown, deixando o texto bonito, com emojis e bem espaçado para leitura fácil.
+                    """
+
+                    # 4. Busca dinâmica de modelos disponíveis diretamente na sua chave de API
+                    status_texto = st.empty()
+                    status_texto.info("🔍 Consultando modelos disponíveis na sua conta...")
+
+                    resposta = None
+                    ultimo_erro = ""
+
+                    try:
+                        # Lista todos os modelos ativos que suportam a geração de texto (generateContent)
+                        modelos_disponiveis = [
+                            m.name for m in genai.list_models()
+                            if 'generateContent' in m.supported_generation_methods
+                        ]
+
+                        if not modelos_disponiveis:
+                            raise Exception("Nenhum modelo ativo foi encontrado para esta chave de API.")
+
+                        # Prioriza modelos do tipo 'flash' (mais rápidos e dentro do plano gratuito)
+                        modelos_ordenados = sorted(
+                            modelos_disponiveis,
+                            key=lambda x: 0 if 'flash' in x.lower() else 1
+                        )
+
+                        for m_full_name in modelos_ordenados:
+                            nome_modelo = m_full_name.replace("models/", "")
+                            try:
+                                status_texto.info(f"🔄 Testando conexão com: {nome_modelo}...")
+                                modelo_ia = genai.GenerativeModel(nome_modelo)
+                                resposta = modelo_ia.generate_content(prompt, request_options={"timeout": 35})
+                                status_texto.empty()
+                                break
+                            except Exception as err:
+                                ultimo_erro = str(err)
+                                continue
+
+                    except Exception as e_list:
+                        ultimo_erro = str(e_list)
+
+                    if resposta is None:
+                        status_texto.empty()
+                        raise Exception(f"Nenhum modelo liberado respondeu. Detalhe: {ultimo_erro}")
+
+                    # 5. Mostrar o resultado na tela
+                    st.success("✅ Análise concluída com sucesso!")
+                    st.markdown("---")
+                    st.markdown(resposta.text)
+                    st.markdown("---")
+                    st.caption("Aviso Legal: A IA fornece análises baseadas em dados e cenários, mas não substitui a responsabilidade final do investidor. Renda variável envolve riscos.")
+
+                except Exception as e:
+                    st.error(f"Ocorreu um erro ao conectar com a IA: {e}")
+
+    # --- VISÃO QUANTITATIVA BÁSICA (Backup offline) ---
+    st.markdown("---")
+    st.subheader("📊 Filtro Rápido do Sistema (Offline)")
+    with st.expander("Ver filtro apenas matemático (P/VP descontado)"):
+        conn = get_connection()
+        try:
+            df_f = limpar_dataframe_numerico(pd.read_sql("SELECT * FROM fundos", conn))
+            if not df_f.empty and "pvp" in df_f.columns:
+                descontados = df_f[(df_f["pvp"] > 0) & (df_f["pvp"] < 1.0) & (df_f["num_cotas"] > 0)]
+                if not descontados.empty:
+                    st.write("💡 FIIs na carteira com P/VP < 1.0 (Atenção: Necessário análise qualitativa, não invista só por isso):")
+                    st.dataframe(descontados[["ticker", "segmento", "pvp", "dy", "cota_atual"]], width="stretch")
+                else:
+                    st.info("Nenhum FII descontado encontrado.")
+        except:
+            pass
+        finally:
+            conn.close()
